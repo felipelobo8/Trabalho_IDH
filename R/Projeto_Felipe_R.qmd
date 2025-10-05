@@ -1,0 +1,157 @@
+---
+title: "Análise da Evolução do Desenvolvimento Socioeconômico do Brasil em Diferentes Contextos Inflacionários"
+author: "Felipe Lobo"
+format: html
+editor: visual
+
+## 1. Introdução
+
+Este trabalho tem como objetivo analisar a trajetória socioeconômica do Brasil ao longo da década de 2010 a 2020. Para isso, foram selecionados três indicadores fundamentais: o Produto Interno Bruto (PIB), que mensura a atividade econômica do país; o Índice de Desenvolvimento Humano (IDH), que reflete a qualidade de vida da população através de componentes de saúde, educação e renda; e o Índice Nacional de Preços ao Consumidor Amplo (IPCA), utilizado como medida da inflação oficial.
+
+A análise se concentra no período entre 2010 e 2020 e busca investigar as correlações e tendências entre esses indicadores. Através da limpeza, integração e visualização dos dados obtidos do IPEADATA, o relatório procura responder à seguinte questão: como o crescimento econômico e o desenvolvimento social se relacionaram no Brasil durante uma década de variada instabilidade inflacionária?
+---
+
+## Quarto
+
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+
+## Running Code
+
+When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+
+```{r}
+## Preparação e Limpeza dos Dados
+
+# Nesta seção, carregamos as bibliotecas necessárias, lemos os três arquivos de dados e realizamos o processo de limpeza, filtragem e integração para criar uma base de dados anual coesa para o período de 2010 a 2020.
+
+library(tidyverse)
+library(readxl)
+library(lubridate)
+
+# Leitura dos arquivos de dados
+df_pib_raw <- read_excel("ipeadata[04-10-2025-06-35].xls")
+df_ipca_raw <- read_csv("ipeadata[04-10-2025-06-31].csv")
+df_idh_raw <- read_excel("ipeadata[04-10-2025-06-59].xls")
+
+# Limpando o IPCA - mensal para anual
+df_ipca_anual <- df_ipca_raw %>%
+  rename(ano_mes = Data, ipca_variacao = `IPCA`) %>%
+  mutate(ano = floor(ano_mes)) %>%
+  filter(ano >= 2010 & ano <= 2020) %>%
+  group_by(ano) %>%
+  summarise(ipca_medio_anual = mean(ipca_variacao, na.rm = TRUE))
+
+# Limpando o PIB - mensal para anual
+df_pib_anual <- df_pib_raw %>%
+  rename(ano_mes = Data, pib_valor_mensal = `PIB - R$ (milhões)`) %>%
+  mutate(ano_mes = as.numeric(ano_mes)) %>%
+  mutate(ano = floor(ano_mes)) %>%
+  filter(ano >= 2010 & ano <= 2020) %>%
+  group_by(ano) %>%
+  summarise(pib_total_anual = sum(pib_valor_mensal, na.rm = TRUE))
+
+# Pivotando o IDH
+df_idh_filtrado <- df_idh_raw %>%
+  pivot_longer(cols = matches("^20\\d{2}$"), names_to = "ano", values_to = "idh") %>%
+  mutate(ano = as.numeric(ano), idh = as.numeric(str_replace(idh, ",", "."))) %>%
+  select(ano, idh)
+
+# Integração das bases de dados
+df_final <- left_join(df_pib_anual, df_idh_filtrado, by = "ano")
+df_final <- left_join(df_final, df_ipca_anual, by = "ano")
+
+# Exibe a estrutura da tabela final
+glimpse(df_final)
+
+## Análise e Visualizações
+
+### Análise de Correlação Numérica
+
+#Para quantificar a relação entre as variáveis, foi calculada uma matriz de correlação.
+
+correlacoes <- df_final %>%
+  select(pib_total_anual, idh, ipca_medio_anual) %>%
+  cor(use = "complete.obs")
+
+print("MATRIZ DE CORRELAÇÃO")
+print(correlacoes)
+
+### Gráficos de Análise
+
+# Gráfico de Evolução do PIB com contexto de IDH e IPCA
+ggplot(df_final, aes(x = ano, y = pib_total_anual)) +
+  geom_line(color = "lightgray", linewidth = 1) +
+  geom_point(aes(color = idh, size = ipca_medio_anual), alpha = 0.8) +
+  scale_color_gradient(low = "blue", high = "yellow") +
+  scale_y_continuous(labels = scales::label_number(scale = 1e-6, suffix = " Tri")) +
+  labs(title = "Evolução do PIB Anual no Brasil (2010-2020)",
+       subtitle = "A cor de cada ponto representa o IDH e o tamanho representa a inflação média do ano",
+       x = "Ano", y = "PIB Anual Total (em R$ Trilhões)", color = "IDH",
+       size = "IPCA Médio Anual (%)") +
+  theme_minimal()
+
+# Gráfico de Correlação IPCA vs. IDH
+ggplot(df_final, aes(x = idh, y = ipca_medio_anual)) +
+  geom_point(aes(color = ano), size = 4, alpha = 0.7) +
+  geom_text(aes(label = ano), nudge_y = -0.2) +
+  geom_smooth(method = "lm", se = FALSE, color = "red", linetype = "dashed") +
+  scale_color_gradient(low = "blue", high = "green") +
+  labs(title = "Correlação entre Inflação (IPCA) e IDH",
+       subtitle = "Brasil, 2010-2020",
+       x = "Índice de Desenvolvimento Humano (IDH)",
+       y = "IPCA Médio Anual (%)",
+       color = "Ano") +
+  theme_minimal()
+
+# Gráfico de Evolução com Dois Eixos (PIB e IDH)
+ggplot(df_final, aes(x = ano)) +
+  geom_line(aes(y = pib_total_anual, color = "PIB Total (R$)"), linewidth = 1.3) +
+  geom_point(aes(y = pib_total_anual, color = "PIB Total (R$)"), size = 3) +
+  geom_line(aes(y = (idh - min(idh)) / (max(idh) - min(idh)) * (max(pib_total_anual) - min(pib_total_anual)) + min(pib_total_anual),
+              color = "IDH"), linewidth = 1.3) +
+  geom_point(aes(y = (idh - min(idh)) / (max(idh) - min(idh)) * (max(pib_total_anual) - min(pib_total_anual)) + min(pib_total_anual),
+               color = "IDH"), size = 3) +
+  scale_y_continuous(
+    name = "PIB Total Anual (R$)",
+    labels = scales::label_number(scale = 1e-6, suffix = " Tri"),
+    sec.axis = sec_axis(
+      trans = ~ ((. - min(df_final$pib_total_anual)) / (max(df_final$pib_total_anual) - min(df_final$pib_total_anual))) * (max(df_final$idh) - min(df_final$idh)) + min(df_final$idh),
+      name = "Índice de Desenvolvimento Humano (IDH)"
+    )
+  ) +
+  scale_color_manual(values = c("IDH" = "darkred", "PIB Total (R$)" = "steelblue")) +
+  labs(title = "Evolução do IDH e do PIB Total Anual (2010–2020)",
+       subtitle = "Eixo esquerdo: PIB | Eixo direito: IDH",
+       x = "Ano", color = "Indicador") +
+  theme_minimal() +
+  theme(
+    axis.title.y.left = element_text(color = "steelblue"),
+    axis.title.y.right = element_text(color = "darkred"),
+    legend.position = "bottom"
+  )
+
+## Interpretação e Conclusão
+
+É possível ver na matriz de correlação uma forte correlação entre PIB e IDH, e o gráfico "Evolução do IDH e do PIB Total Anual (2010–2020)" mostra isso de forma clara. Já o IPCA tem correlação menor e negativa com o IDH, mostrando que menos inflação pode sim ser bom para o IDH; mas, se o produto do país estiver aumentando, o IDH tende a subir.
+
+## Glossário de Variáveis
+
+| Variável | Descrição |
+| :--- | :--- |
+| `ano` | Ano da observação (2010 a 2020). |
+| `pib_total_anual` | Soma do PIB mensal de fontes do IPEADATA, representando o PIB total do ano. |
+| `idh` | Valor do Índice de Desenvolvimento Humano para o ano. |
+| `ipca_medio_anual` | Média da variação mensal do IPCA para o ano. |
+
+## Referências
+
+* **Dados:** IPEADATA - Instituto de Pesquisa Econômica Aplicada.
+* **Auxílio de IA:** O uso da IA foi feito para auxiliar na criação dos gráficos. Prompt principal: "crie um grafico que mostre a correlação das 3 db usando como base os anos 2010 - 2020"; "grafico com dois eixos Y de IDH - PIB".
+```
+
+You can add options to executable code like this
+
+```{r}
+```
+
+The `echo: false` option disables the printing of code (only output is displayed).
